@@ -37,8 +37,9 @@ export const ThemeSwitcherModal: React.FC<ThemeSwitcherModalProps> = ({ isOpen, 
     currentThemeConfig,
   } = useApp();
 
+  const defaultSupabaseBg = 'https://mmmthrlbikllhdupslrz.supabase.co/storage/v1/object/public/app-background-images/Splash%20Screen%202/1788503584034(1).png';
   const [activeBgUrl, setActiveBgUrl] = useState<string>(
-    () => localStorage.getItem('algosalon_screen2_bg_url') || '/images/splash-haircut-stylist.jpg'
+    () => localStorage.getItem('algosalon_screen2_bg_url') || defaultSupabaseBg
   );
   const [customBgInput, setCustomBgInput] = useState<string>('');
 
@@ -49,11 +50,10 @@ export const ThemeSwitcherModal: React.FC<ThemeSwitcherModalProps> = ({ isOpen, 
   };
 
   const handleResetBg = () => {
-    const defaultUrl = '/images/splash-haircut-stylist.jpg';
-    setActiveBgUrl(defaultUrl);
+    setActiveBgUrl(defaultSupabaseBg);
     setCustomBgInput('');
     localStorage.removeItem('algosalon_screen2_bg_url');
-    window.dispatchEvent(new CustomEvent('algosalon_bg_changed', { detail: defaultUrl }));
+    window.dispatchEvent(new CustomEvent('algosalon_bg_changed', { detail: defaultSupabaseBg }));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -127,9 +127,7 @@ export const ThemeSwitcherModal: React.FC<ThemeSwitcherModalProps> = ({ isOpen, 
                 Customize App Appearance
                 <Sparkles className="w-4 h-4 text-amber-500" />
               </h2>
-              <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                Choose your luxury salon color scheme & canvas mode
-              </p>
+              <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>\n                Choose your luxury salon color scheme & canvas mode\n              </p>
             </div>
           </div>
 
