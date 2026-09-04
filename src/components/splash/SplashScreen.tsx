@@ -42,18 +42,21 @@ import {
 } from 'lucide-react';
 
 import { supabaseALGOsalonClient } from '../../supabaseALGOsalonClient';
-import { get } from 'idb-keyval';
+import { del } from 'idb-keyval';
 import { getBackgroundImage } from '../../services/supabaseService';
 
-interface CachedBgMeta {
-  dataUrl: string;
-  updatedAt?: string;
-  filename?: string;
-}
-
-// Primary Screen 2 Background Image from Supabase Storage bucket app-background-images
+// Primary Screen 2 Background Image from Supabase Storage bucket app-background-images (Direct Public CDN)
 const SALON_HAIRCUT_IMAGE = 'https://mmmthrlbikllhdupslrz.supabase.co/storage/v1/object/public/app-background-images/Splash%20Screen%202/1788503584034(1).png';
 const APP_BACKGROUNDS_BUCKET = 'app-background-images';
+
+// Global eager preloader & GPU texture decode on script evaluation for instant Screen 2 paint
+if (typeof window !== 'undefined') {
+  const eagerImg = new Image();
+  eagerImg.src = SALON_HAIRCUT_IMAGE;
+  if (typeof eagerImg.decode === 'function') {
+    eagerImg.decode().catch(() => {});
+  }
+}
 
 // 4 Signature Platform Benefits for Customer Role
 const CUSTOMER_FEATURE_CARDS = [
@@ -183,30 +186,48 @@ export const SplashScreen: React.FC = () => {
   });
   const introTimerRef = useRef<NodeJS.Timeout[]>([]);
 
-  // 1. Bundled default + background cache (starts immediately with DEFAULT_BG, zero blank/broken render)
-  // 2. Checks IndexedDB (idb-keyval) for instant cached image
-  // 3. Compares remote Supabase updated_at metadata to only download when background image changes
+  // Eager preloading & non-blocking public CDN asset sync
   useEffect(() => {
     let mounted = true;
 
-    // Fast async check from IndexedDB cache v3
-    get<CachedBgMeta>('algosalon_screen2_bg_cached_meta_v3').then((meta) => {
-      if (mounted && meta?.dataUrl && !localStorage.getItem('algosalon_screen2_bg_url')) {
-        setScreen2BgUrl(meta.dataUrl);
+    const preloadImage = (url: string) => {
+      if (!url) return;
+      const img = new Image();
+      img.src = url;
+      if (typeof img.decode === 'function') {
+        img.decode().catch(() => {});
       }
-    }).catch(() => {});
+    };
 
-    // Remote sync with Supabase storage + cache invalidation check
-    getBackgroundImage().then((source) => {
-      if (mounted && source && !localStorage.getItem('algosalon_screen2_bg_url')) {
-        setScreen2BgUrl(source);
-      }
-    });
+    // Preload current background into browser cache & GPU memory immediately
+    preloadImage(screen2BgUrl);
+    if (screen2BgUrl !== SALON_HAIRCUT_IMAGE) {
+      preloadImage(SALON_HAIRCUT_IMAGE);
+    }
+
+    // Clean up legacy heavy IndexedDB entries in background
+    try {
+      del('algosalon_screen2_bg_cached_meta_v3').catch(() => {});
+      del('algosalon_screen2_bg_cached_data').catch(() => {});
+    } catch {
+      // Safe ignore
+    }
+
+    // Resolve any custom background URL without blocking splash boot
+    getBackgroundImage()
+      .then((source) => {
+        if (mounted && source && source !== screen2BgUrl && !localStorage.getItem('algosalon_screen2_bg_url')) {
+          setScreen2BgUrl(source);
+          preloadImage(source);
+        }
+      })
+      .catch(() => {});
 
     const handleBgChange = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
       if (customEvent.detail) {
         setScreen2BgUrl(customEvent.detail);
+        preloadImage(customEvent.detail);
       }
     };
     window.addEventListener('algosalon_bg_changed', handleBgChange);
@@ -215,7 +236,7 @@ export const SplashScreen: React.FC = () => {
       mounted = false;
       window.removeEventListener('algosalon_bg_changed', handleBgChange);
     };
-  }, []);
+  }, [screen2BgUrl]);
 
   const isLight = colorThemeMode === 'light';
   const primaryColor = currentThemeConfig?.primaryHex || '#0EA36F';
@@ -419,6 +440,17 @@ export const SplashScreen: React.FC = () => {
         } bg-[size:28px_28px]`}
       />
 
+      {/* Invisible eager image element ensuring browser preheats texture decoding before Screen 2 appears */}
+      <img
+        src={screen2BgUrl}
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        className="sr-only pointer-events-none opacity-0 fixed -top-[9999px] -left-[9999px] w-1 h-1"
+      />
+
       {/* Desktop/Tablet Ambient Lighting Aura */}
       {isWideDesktop && (
         <div
@@ -508,9 +540,9 @@ export const SplashScreen: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.35 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
               onClick={skipToWelcome}
-              className="w-full h-full min-h-[100dvh] flex-1 flex flex-col justify-between items-center text-center relative overflow-hidden p-0 m-0 cursor-pointer"
+              className="w-full h-full min-h-[100dvh] flex-1 flex flex-col justify-between items-center text-center relative overflow-hidden p-0 m-0 cursor-pointer transform-gpu will-change-[opacity]"
             >
               {/* Matched Growing Green Brand Glow Aura behind logo/visual */}
               <motion.div
@@ -817,23 +849,26 @@ export const SplashScreen: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="w-full h-full min-h-[100dvh] flex-1 flex flex-col justify-between items-center text-center relative overflow-hidden p-0 m-0"
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+              className="w-full h-full min-h-[100dvh] flex-1 flex flex-col justify-between items-center text-center relative overflow-hidden p-0 m-0 transform-gpu will-change-[opacity]"
             >
               {/* Background Salon Haircut Photography with Crisp Balanced Gradient & Ambient Aura */}
-              <div className="absolute inset-0 z-0 overflow-hidden">
+              <div className="absolute inset-0 z-0 overflow-hidden transform-gpu">
                 {/* Haircut Photography - Crisp, deliberate, and clearly visible */}
                 <img
                   src={screen2BgUrl}
                   alt="Professional stylist cutting client hair with scissors and comb in salon"
                   referrerPolicy="no-referrer"
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                   onError={(e) => {
                     const target = e.currentTarget;
                     if (target.src !== SALON_HAIRCUT_IMAGE) {
                       target.src = SALON_HAIRCUT_IMAGE;
                     }
                   }}
-                  className="w-full h-full object-cover object-[center_32%] transition-transform duration-700 opacity-100 dark:opacity-95"
+                  className="w-full h-full object-cover object-[center_32%] transition-transform duration-700 opacity-100 dark:opacity-95 transform-gpu"
                 />
 
                 {/* Refined gradient scrim allowing photography to shine through while ensuring AA text contrast */}

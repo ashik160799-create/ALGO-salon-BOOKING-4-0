@@ -1359,199 +1359,41 @@ export async function cleanSupabaseDuplicateIdentities(
   }
 }
 
-import { get, set } from 'idb-keyval';
+import { del } from 'idb-keyval';
 
+/**
+ * Direct public CDN URL for Screen 2 background image.
+ * Bypasses database/storage RLS entirely for zero latency, instant response, and browser CDN caching.
+ */
 const DEFAULT_BG = 'https://mmmthrlbikllhdupslrz.supabase.co/storage/v1/object/public/app-background-images/Splash%20Screen%202/1788503584034(1).png';
-const DEFAULT_BG_JPG = 'https://mmmthrlbikllhdupslrz.supabase.co/storage/v1/object/public/app-background-images/Splash%20Screen%202/1788503584034(1).png';
-const IDB_CACHE_KEY = 'algosalon_screen2_bg_cached_meta_v3';
+const DEFAULT_BG_JPG = DEFAULT_BG;
 
-interface CachedBgMeta {
-  dataUrl: string;
-  updatedAt?: string;
-  filename?: string;
+// Clean up any heavy legacy Base64 blobs from IndexedDB asynchronously in background
+try {
+  del('algosalon_screen2_bg_cached_meta_v3').catch(() => {});
+  del('algosalon_screen2_bg_cached_data').catch(() => {});
+} catch {
+  // Safe ignore
 }
 
 /**
- * High-performance, resilient web background image loader (PNG-First):
- * 1. Checks IndexedDB (via idb-keyval) asynchronously for non-blocking splash screen boot.
- * 2. Prioritizes original PNG files in Supabase Storage 'app-background-images' bucket:
- *    (screen2-bg.png, background.png, screen2.png, splash.png, original.png, or any *.png file).
- * 3. Probes direct PNG downloads and getPublicUrl() if bucket listing is restricted.
- * 4. Compares remote object 'updated_at' timestamp for smart cache invalidation.
- * 5. 5-Second Timeout Safeguard + Safe Fallbacks to local PNG asset.
+ * Ultra-fast background image URL resolver:
+ * 1. Checks localStorage for any user/admin customized URL.
+ * 2. Directly returns the public Supabase CDN URL without hitting storage RLS,
+ *    eliminating all main-thread blocking FileReader Base64 conversions and multi-bucket loops.
  */
 export async function getBackgroundImage(): Promise<string> {
-  let cachedEntry: CachedBgMeta | undefined;
-
   try {
-    // 1. Retrieve cached entry from IndexedDB (non-blocking)
-    cachedEntry = await get<CachedBgMeta>(IDB_CACHE_KEY).catch(() => undefined);
-
-    if (!isSupabaseConfigured()) {
-      return cachedEntry?.dataUrl || DEFAULT_BG;
-    }
-
-    const checkRemoteMetadataAndDownload = async (): Promise<string> => {
-      const candidateBuckets = ['app-background-images', 'avatars', 'images', 'public'];
-
-      // Preferred PNG candidates in priority order (Screen 2)
-      const candidatePngNames = [
-        'Splash Screen 2/1788503584034(1).png',
-        'Splash Screen 2/1788503584034.png',
-        'Splash Screen 2/screen2-bg.png',
-        'Splash Screen 2/Image.png',
-        '1788503584034(1).png',
-        '1788503584034.png',
-        'Image.png',
-        'image.png',
-        'screen2-bg.png',
-        'background.png',
-      ];
-
-      let targetFile: { name: string; updated_at?: string; created_at?: string; bucket: string } | null = null;
-
-      // Search across candidate buckets
-      for (const bucketName of candidateBuckets) {
-        // A. Try bucket listing first
-        const { data: files } = await supabaseALGOsalonClient.storage
-          .from(bucketName)
-          .list()
-          .catch(() => ({ data: null }));
-
-        if (files && files.length > 0) {
-          const match =
-            files.find(f => candidatePngNames.includes(f.name.toLowerCase())) ||
-            files.find(f => f.name.toLowerCase().endsWith('.png')) ||
-            files.find(f => f.name.toLowerCase().endsWith('.jpg') || f.name.toLowerCase().endsWith('.jpeg')) ||
-            files.find(f => !f.name.startsWith('.'));
-
-          if (match?.name) {
-            targetFile = { ...match, bucket: bucketName };
-            break;
-          }
-        }
-
-        // B. Probe direct candidates via download
-        for (const candidateName of candidatePngNames) {
-          const { data: blob, error } = await supabaseALGOsalonClient.storage
-            .from(bucketName)
-            .download(candidateName);
-
-          if (!error && blob && blob.size > 0) {
-            targetFile = { name: candidateName, updated_at: String(Date.now()), bucket: bucketName };
-            
-            const base64DataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-
-            const newMeta: CachedBgMeta = {
-              dataUrl: base64DataUrl,
-              updatedAt: targetFile.updated_at,
-              filename: targetFile.name,
-            };
-            await set(IDB_CACHE_KEY, newMeta).catch(() => {});
-            return base64DataUrl;
-          }
-
-          // Probe via getPublicUrl + fetch HEAD
-          const { data: pubData } = supabaseALGOsalonClient.storage
-            .from(bucketName)
-            .getPublicUrl(candidateName);
-
-          if (pubData?.publicUrl) {
-            try {
-              const res = await fetch(pubData.publicUrl, { method: 'HEAD' });
-              if (res.ok) {
-                targetFile = { name: candidateName, updated_at: String(Date.now()), bucket: bucketName };
-                
-                const fullRes = await fetch(pubData.publicUrl);
-                const fullBlob = await fullRes.blob();
-                const base64DataUrl = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(fullBlob);
-                });
-
-                const newMeta: CachedBgMeta = {
-                  dataUrl: base64DataUrl,
-                  updatedAt: targetFile.updated_at,
-                  filename: targetFile.name,
-                };
-                await set(IDB_CACHE_KEY, newMeta).catch(() => {});
-                return base64DataUrl;
-              }
-            } catch {
-              // Ignore network check error
-            }
-          }
-        }
-      }
-
-      if (!targetFile?.name) {
-        if (cachedEntry?.dataUrl) return cachedEntry.dataUrl;
-        throw new Error('No valid PNG or background image file found in Supabase storage');
-      }
-
-      const remoteUpdatedAt = targetFile.updated_at || targetFile.created_at || '';
-
-      // CACHE INVALIDATION CHECK:
-      if (
-        cachedEntry?.dataUrl &&
-        cachedEntry.filename === targetFile.name &&
-        cachedEntry.updatedAt === remoteUpdatedAt &&
-        remoteUpdatedAt !== ''
-      ) {
-        return cachedEntry.dataUrl;
-      }
-
-      // Download updated or missing PNG file from Supabase
-      const { data: blob, error: downloadErr } = await supabaseALGOsalonClient.storage
-        .from(targetFile.bucket)
-        .download(targetFile.name);
-
-      if (downloadErr || !blob) {
-        if (cachedEntry?.dataUrl) return cachedEntry.dataUrl;
-        throw downloadErr || new Error('Failed to download image blob');
-      }
-
-      const base64DataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('FileReader conversion error'));
-        reader.readAsDataURL(blob);
-      });
-
-      const newMeta: CachedBgMeta = {
-        dataUrl: base64DataUrl,
-        updatedAt: remoteUpdatedAt,
-        filename: targetFile.name,
-      };
-
-      await set(IDB_CACHE_KEY, newMeta).catch((writeErr) => {
-        console.warn('IndexedDB write warning (handled safely):', writeErr);
-      });
-
-      return base64DataUrl;
-    };
-
-    // 5-second timeout safeguard so splash boot never hangs
-    const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Background PNG download timeout (5s exceeded)')), 5000)
-    );
-
-    return await Promise.race([checkRemoteMetadataAndDownload(), timeoutPromise]);
-  } catch (err: any) {
-    console.warn('Background PNG fetch/check failed, falling back safely:', err?.message || err);
-    // Return cached IndexedDB image if available, otherwise DEFAULT_BG
-    return cachedEntry?.dataUrl || DEFAULT_BG;
+    const customUrl = localStorage.getItem('algosalon_screen2_bg_url');
+    if (customUrl) return customUrl;
+  } catch {
+    // ignore
   }
+
+  return DEFAULT_BG;
 }
 
-export async function fetchAppBackgroundFromSupabase(filename: string = 'screen2-bg.png'): Promise<string | null> {
+export async function fetchAppBackgroundFromSupabase(_filename: string = 'screen2-bg.png'): Promise<string | null> {
   return getBackgroundImage();
 }
 
