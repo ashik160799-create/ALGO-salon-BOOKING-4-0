@@ -11,11 +11,11 @@ const DEFAULT_SUPABASE_KEY =
 function normalizeSupabaseUrl(rawUrl?: unknown): string {
   if (!rawUrl || typeof rawUrl !== 'string') return DEFAULT_SUPABASE_URL;
 
-  let cleaned = rawUrl.trim().replace(/^['"]+|['\"]+$/g, '');
+  let cleaned = rawUrl.trim().replace(/^['"]+|['"]+$/g, '');
   if (cleaned.startsWith('VITE_SUPABASE_URL=')) {
     cleaned = cleaned.replace(/^VITE_SUPABASE_URL=/, '').trim();
   }
-  cleaned = cleaned.replace(/^['\"]+|['\"]+$/g, '');
+  cleaned = cleaned.replace(/^['"]+|['"]+$/g, '');
 
   if (!cleaned || cleaned.includes('YOUR_PROJECT_REF') || cleaned === 'undefined' || cleaned === 'null') {
     return DEFAULT_SUPABASE_URL;
@@ -53,14 +53,14 @@ function normalizeSupabaseUrl(rawUrl?: unknown): string {
 function normalizeSupabaseKey(rawAnonKey?: unknown, rawPublishableKey?: unknown): string {
   const cleanKey = (key?: unknown): string => {
     if (!key || typeof key !== 'string') return '';
-    let cleaned = key.trim().replace(/^['"]+|['\"]+$/g, '');
+    let cleaned = key.trim().replace(/^['"]+|['"]+$/g, '');
     if (cleaned.startsWith('VITE_SUPABASE_ANON_KEY=')) {
       cleaned = cleaned.replace(/^VITE_SUPABASE_ANON_KEY=/, '').trim();
     }
     if (cleaned.startsWith('VITE_SUPABASE_PUBLISHABLE_KEY=')) {
       cleaned = cleaned.replace(/^VITE_SUPABASE_PUBLISHABLE_KEY=/, '').trim();
     }
-    cleaned = cleaned.replace(/^['\"]+|['\"]+$/g, '');
+    cleaned = cleaned.replace(/^['"]+|['"]+$/g, '');
     return cleaned;
   };
 

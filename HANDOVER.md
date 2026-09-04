@@ -30,3 +30,18 @@ The supplied Vite/React/TypeScript application has been reviewed and corrected i
 | Live booking-flow preview | Passed after correcting an intermediate React hook-order regression. The dialog opens and reaches the time-selection stage. |
 
 The production bundle completes successfully but remains approximately **970 kB** before gzip because the current single bundle includes the large dashboard and customer views. Code splitting by role/route is recommended as a follow-up performance task.
+
+## Supabase package delivered
+
+| File | Use |
+| --- | --- |
+| `SUPABASE_REQUIREMENTS.md` | Detailed data model, authentication, storage, RLS, security, implementation sequence, and test checklist with official references. |
+| `supabase/migrations/20260831_000001_algo_salon_core.sql` | Core database schema, booking/review safeguards, private media buckets, permission revocation, RLS policies, and guarded RPCs. |
+| `supabase/README.md` | Safe runbook for applying and validating the package. |
+| `.env.example` | Safe browser client-variable placeholders and explicit prohibition on exposing service-role and provider secrets. |
+
+## Important boundary before production
+
+The current application still uses mock data and browser storage as a preview layer. **Do not launch it as a production service until** Supabase Auth is connected, all data actions have migrated from local state to secure queries/RPCs, the supplied RLS policies have been applied and tested, and payment/webhook logic is held exclusively in trusted server-side code.
+
+The booking interface now performs basic client-side conflict checks for better feedback, but the database exclusion constraint and `create_booking` procedure in the supplied migration are the authoritative protection against concurrent double booking.

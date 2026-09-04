@@ -132,7 +132,7 @@ insert into public.services (
   )
 on conflict (id) do nothing;
 
--- 4. Insert Master Stylists & Staff
+-- 4. Insert Staff Profiles
 insert into public.staff_profiles (
   id,
   salon_id,
@@ -186,5 +186,31 @@ insert into public.staff_profiles (
     true
   )
 on conflict (id) do nothing;
+
+-- 5. Map Staff to Services
+insert into public.staff_services (staff_id, service_id)
+values
+  ('33333333-3333-3333-3333-333333333331', '22222222-2222-2222-2222-222222222221'),
+  ('33333333-3333-3333-3333-333333333331', '22222222-2222-2222-2222-222222222223'),
+  ('33333333-3333-3333-3333-333333333332', '22222222-2222-2222-2222-222222222221'),
+  ('33333333-3333-3333-3333-333333333332', '22222222-2222-2222-2222-222222222222'),
+  ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222223'),
+  ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222224')
+on conflict (staff_id, service_id) do nothing;
+
+-- 6. Insert Staff Working Hours (Daily 09:00 - 20:00)
+insert into public.staff_working_hours (staff_id, day_of_week, is_working, starts_at, ends_at)
+select
+  s.id as staff_id,
+  d.day as day_of_week,
+  true as is_working,
+  '09:00:00'::time as starts_at,
+  '20:00:00'::time as ends_at
+from public.staff_profiles s
+cross join (
+  select 0 as day union select 1 union select 2 union select 3 union select 4 union select 5 union select 6
+) d
+where s.salon_id = '11111111-1111-1111-1111-111111111111'
+on conflict (staff_id, day_of_week) do nothing;
 
 commit;
